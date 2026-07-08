@@ -1,4 +1,4 @@
-from apps.api.app.models.org_engine.organization import University, Organization, Branding, OrganizationSettings
+from apps.api.app.models.org_engine.organization import University, Organization, Branding, BrandingRevision, OrganizationSettings
 from apps.api.app.models.org_engine.academic import AcademicYear, Semester, Department, Branch, Section
 from apps.api.app.models.org_engine.curriculum import Program, Course
 from apps.api.app.models.org_engine.extension import Module, FeatureFlag
@@ -7,6 +7,7 @@ ORG_ENGINE_MODELS = [
     University,
     Organization,
     Branding,
+    BrandingRevision,
     OrganizationSettings,
     AcademicYear,
     Semester,
@@ -23,6 +24,7 @@ __all__ = [
     "University",
     "Organization",
     "Branding",
+    "BrandingRevision",
     "OrganizationSettings",
     "AcademicYear",
     "Semester",

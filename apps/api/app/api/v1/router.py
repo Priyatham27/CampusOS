@@ -6,13 +6,19 @@ from apps.api.app.api.v1.roles import router as roles_router
 from apps.api.app.api.v1.settings import router as settings_router
 from apps.api.app.api.v1.audit import router as audit_router
 from apps.api.app.api.v1.upload import router as upload_router
+from apps.api.app.api.v1.branding import router as branding_router
+from apps.api.app.api.v1.academic import router as academic_router
 
 api_router = APIRouter()
 
 api_router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 # Mount organization CRUD router on "/organizations" prefix
 api_router.include_router(organizations_router, prefix="/organizations", tags=["Organizations Engine"])
+api_router.include_router(branding_router)
+api_router.include_router(academic_router, tags=["Academic Structure Engine"])
 api_router.include_router(user_router, prefix="/users", tags=["Users"])
+
+
 api_router.include_router(roles_router, prefix="/roles", tags=["Roles & Permissions"])
 api_router.include_router(settings_router, prefix="/settings", tags=["Settings & Feature Flags"])
 api_router.include_router(audit_router, prefix="/audit", tags=["Audit & Logs"])

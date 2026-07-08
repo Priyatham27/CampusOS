@@ -43,6 +43,7 @@ class Program(BaseDocument):
 
 class Course(BaseDocument):
     course_id: str = Field(..., alias="courseId")
+    organization_id: PydanticObjectId = Field(..., alias="organizationId")
     program_id: PydanticObjectId = Field(..., alias="programId")
     course_code: str = Field(..., alias="courseCode", min_length=2, max_length=15)  # e.g., "CS101"
     credits: float = Field(..., ge=0.5, le=30.0)  # Course credit hours weight
@@ -66,8 +67,9 @@ class Course(BaseDocument):
         name = "courses"
         indexes = [
             IndexModel("courseId", unique=True),
-            # programId + courseCode unique constraint
-            IndexModel([("programId", 1), ("courseCode", 1)], unique=True),
+            IndexModel([("organizationId", 1), ("courseCode", 1)], unique=True),
+            IndexModel("organizationId"),
             IndexModel("programId"),
             IndexModel([("courseCode", "text"), ("searchKeywords", "text")]),
         ]
+

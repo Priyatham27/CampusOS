@@ -4,10 +4,11 @@ from datetime import datetime
 from pymongo import IndexModel
 from pydantic import Field, EmailStr, BaseModel, field_validator, ConfigDict
 from pydantic.alias_generators import to_camel
-from beanie import PydanticObjectId
+from beanie import PydanticObjectId, before_event, Insert
 import re
 
 from apps.api.app.models.base import BaseDocument
+
 
 class OrganizationStatus(str, Enum):
     ACTIVE = "ACTIVE"
@@ -172,25 +173,98 @@ class Organization(BaseDocument):
 
 class Branding(BaseDocument):
     organization_id: PydanticObjectId = Field(..., alias="organizationId")
+    organization_logo: Optional[str] = Field(default=None, alias="organizationLogo")
+    dark_logo: Optional[str] = Field(default=None, alias="darkLogo")
+    favicon: Optional[str] = Field(default=None, alias="favicon")
+    banner: Optional[str] = Field(default=None, alias="banner")
     primary_color: str = Field(default="#4F46E5", alias="primaryColor")
     secondary_color: str = Field(default="#0891B2", alias="secondaryColor")
     accent_color: str = Field(default="#F59E0B", alias="accentColor")
     surface_color: str = Field(default="#FFFFFF", alias="surfaceColor")
     background_color: str = Field(default="#F9FAFB", alias="backgroundColor")
-    dark_mode: bool = Field(default=False, alias="darkMode")
+    text_primary_color: str = Field(default="#1F2937", alias="textPrimaryColor")
+    text_secondary_color: str = Field(default="#4B5563", alias="textSecondaryColor")
+    text_muted_color: str = Field(default="#9CA3AF", alias="textMutedColor")
+    text_on_primary: str = Field(default="#FFFFFF", alias="textOnPrimary")
+    text_on_secondary: str = Field(default="#FFFFFF", alias="textOnSecondary")
+    success_color: str = Field(default="#10B981", alias="successColor")
+    warning_color: str = Field(default="#F59E0B", alias="warningColor")
+    danger_color: str = Field(default="#EF4444", alias="dangerColor")
+    info_color: str = Field(default="#3B82F6", alias="infoColor")
+    border_radius: str = Field(default="0.5rem", alias="borderRadius")
     font_family: str = Field(default="Inter", alias="fontFamily")
-    radius: str = Field(default="0.5rem")
+    theme: str = Field(default="light")  # light, dark, auto
+    default_landing_image: Optional[str] = Field(default=None, alias="defaultLandingImage")
+    certificate_watermark: Optional[str] = Field(default=None, alias="certificateWatermark")
+    email_header_logo: Optional[str] = Field(default=None, alias="emailHeaderLogo")
+    email_footer: Optional[str] = Field(default=None, alias="emailFooter")
+    footer_text: Optional[str] = Field(default=None, alias="footerText")
+    support_email: Optional[EmailStr] = Field(default=None, alias="supportEmail")
+    website: Optional[str] = Field(default=None)
+    social_twitter: Optional[str] = Field(default=None, alias="socialTwitter")
+    social_linkedin: Optional[str] = Field(default=None, alias="socialLinkedin")
+    social_facebook: Optional[str] = Field(default=None, alias="socialFacebook")
+    social_instagram: Optional[str] = Field(default=None, alias="socialInstagram")
+    social_youtube: Optional[str] = Field(default=None, alias="socialYoutube")
+    preview_config: Optional[dict] = Field(default=None, alias="previewConfig")
+    version: int = Field(default=1)
 
-    @field_validator("primary_color", "secondary_color", "accent_color", "surface_color", "background_color")
+    @field_validator(
+        "primary_color", "secondary_color", "accent_color", "surface_color",
+        "background_color", "text_primary_color", "text_secondary_color",
+        "text_muted_color", "text_on_primary", "text_on_secondary",
+        "success_color", "warning_color", "danger_color", "info_color"
+    )
     @classmethod
     def validate_colors(cls, v: str) -> str:
         return validate_hex_color(v)
 
+    @field_validator(
+        "organization_logo", "dark_logo", "favicon", "banner",
+        "default_landing_image", "certificate_watermark", "email_header_logo"
+    )
+    @classmethod
+    def validate_urls(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            if not (v.startswith("http://") or v.startswith("https://")):
+                raise ValueError("URL must start with http:// or https://")
+        return v
+
+    @field_validator("theme")
+    @classmethod
+    def validate_theme(cls, v: str) -> str:
+        if v not in ("light", "dark", "auto"):
+            raise ValueError("Theme must be one of: light, dark, auto")
+        return v
+
     class Settings:
         name = "brandings"
         indexes = [
-            IndexModel("organization_id", unique=True),
+            IndexModel("organizationId", unique=True),
         ]
+
+class BrandingRevision(BaseDocument):
+    branding_id: PydanticObjectId = Field(..., alias="brandingId")
+    organization_id: PydanticObjectId = Field(..., alias="organizationId")
+    version: int = Field(..., ge=1)
+    branding_data: dict = Field(..., alias="brandingData")
+
+    @before_event(Insert)
+    def before_insert_hook(self):
+        """Override to prevent base document from resetting version to 1."""
+        now = datetime.utcnow()
+        self.created_at = now
+        self.updated_at = now
+        self.revision_number = 0
+
+    class Settings:
+        name = "branding_revisions"
+        indexes = [
+            IndexModel([("organizationId", 1), ("version", -1)], unique=True),
+        ]
+
+
+
 
 class OrganizationSettings(BaseDocument):
     organization_id: PydanticObjectId = Field(..., alias="organizationId")

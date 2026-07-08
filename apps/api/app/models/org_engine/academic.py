@@ -106,6 +106,7 @@ class Department(BaseDocument):
 
 class Branch(BaseDocument):
     branch_id: str = Field(..., alias="branchId")
+    organization_id: PydanticObjectId = Field(..., alias="organizationId")
     department_id: PydanticObjectId = Field(..., alias="departmentId")
     code: str = Field(..., min_length=2, max_length=15)  # e.g., "CSE-AI", "CSE-DS"
     name: str = Field(..., min_length=2, max_length=100)
@@ -128,14 +129,16 @@ class Branch(BaseDocument):
         name = "branches"
         indexes = [
             IndexModel("branchId", unique=True),
-            # departmentId + code unique constraint
-            IndexModel([("departmentId", 1), ("code", 1)], unique=True),
+            IndexModel([("organizationId", 1), ("departmentId", 1), ("code", 1)], unique=True),
+            IndexModel("organizationId"),
             IndexModel("departmentId"),
             IndexModel([("name", "text"), ("searchKeywords", "text")]),
         ]
 
+
 class Section(BaseDocument):
     section_id: str = Field(..., alias="sectionId")
+    organization_id: PydanticObjectId = Field(..., alias="organizationId")
     branch_id: PydanticObjectId = Field(..., alias="branchId")
     semester_id: PydanticObjectId = Field(..., alias="semesterId")
     name: str = Field(..., min_length=1, max_length=20)  # e.g., "Section A"
@@ -154,9 +157,10 @@ class Section(BaseDocument):
         name = "sections"
         indexes = [
             IndexModel("sectionId", unique=True),
-            # branchId + semesterId + name unique constraint
-            IndexModel([("branchId", 1), ("semesterId", 1), ("name", 1)], unique=True),
+            IndexModel([("organizationId", 1), ("branchId", 1), ("semesterId", 1), ("name", 1)], unique=True),
+            IndexModel("organizationId"),
             IndexModel("branchId"),
             IndexModel("semesterId"),
             IndexModel([("name", "text"), ("searchKeywords", "text")]),
         ]
+

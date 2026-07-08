@@ -5,6 +5,11 @@ from pydantic import Field, ConfigDict
 from pydantic.alias_generators import to_camel
 from bson import ObjectId
 
+def to_camel_with_id_ignored(s: str) -> str:
+    if s == "id":
+        return "_id"
+    return to_camel(s)
+
 class BaseDocument(Document):
     """
     Production-grade base document class for Beanie ODM models.
@@ -23,11 +28,12 @@ class BaseDocument(Document):
     change_reason: Optional[str] = Field(default=None, alias="changeReason")
 
     model_config = ConfigDict(
-        alias_generator=to_camel,
+        alias_generator=to_camel_with_id_ignored,
         populate_by_name=True,
         use_enum_values=True,
         arbitrary_types_allowed=True,
     )
+
 
     @before_event(Insert)
     def before_insert_hook(self):

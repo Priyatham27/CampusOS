@@ -96,12 +96,10 @@ class OrganizationService:
             org_object_id = inserted_org.id
 
             # Create default Branding config
-            branding = Branding(
-                organizationId=org_object_id,
-                primaryColor="#4F46E5",
-                secondaryColor="#0891B2"
-            )
-            await branding.insert(session=session_arg)
+            from apps.api.app.services.branding import BrandingService
+            branding_service = BrandingService()
+            await branding_service.generate_default_branding(org_object_id, session=session_arg)
+
 
             # Create default settings
             settings = OrganizationSettings(

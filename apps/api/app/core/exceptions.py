@@ -90,4 +90,33 @@ class HierarchyViolation(OrganizationException):
     status_code: int = status.HTTP_422_UNPROCESSABLE_ENTITY
     detail: str = "Hierarchy mapping constraint violation."
 
+class CapabilityNotFound(OrganizationException):
+    status_code: int = status.HTTP_404_NOT_FOUND
+    detail: str = "Capability not found."
+
+class CapabilityAlreadyExists(OrganizationException):
+    status_code: int = status.HTTP_409_CONFLICT
+    detail: str = "Capability already exists."
+
+class DependencyMissing(OrganizationException):
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    detail: str = "Required capability dependency is missing or disabled."
+
+class CircularDependency(OrganizationException):
+    status_code: int = status.HTTP_422_UNPROCESSABLE_ENTITY
+    detail: str = "Circular capability dependencies detected."
+
+class LicenseViolation(OrganizationException):
+    status_code: int = status.HTTP_403_FORBIDDEN
+    detail: str = "Organization subscription license tier does not cover this capability."
+
+class CompatibilityViolation(OrganizationException):
+    status_code: int = status.HTTP_422_UNPROCESSABLE_ENTITY
+    detail: str = "Compatibility violation with existing enabled capabilities."
+
+class CoreModuleProtected(OrganizationException):
+    status_code: int = status.HTTP_403_FORBIDDEN
+    detail: str = "Core system capabilities cannot be disabled or deleted."
+
+
 

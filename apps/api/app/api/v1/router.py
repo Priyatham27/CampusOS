@@ -8,6 +8,7 @@ from apps.api.app.api.v1.audit import router as audit_router
 from apps.api.app.api.v1.upload import router as upload_router
 from apps.api.app.api.v1.branding import router as branding_router
 from apps.api.app.api.v1.academic import router as academic_router
+from apps.api.app.api.v1.capability import router as capability_router
 
 api_router = APIRouter()
 
@@ -16,6 +17,7 @@ api_router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(organizations_router, prefix="/organizations", tags=["Organizations Engine"])
 api_router.include_router(branding_router)
 api_router.include_router(academic_router, tags=["Academic Structure Engine"])
+api_router.include_router(capability_router, prefix="/capabilities", tags=["Capabilities Engine"])
 api_router.include_router(user_router, prefix="/users", tags=["Users"])
 
 

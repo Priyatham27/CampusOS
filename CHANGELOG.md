@@ -51,3 +51,26 @@ All notable changes to the CampusOS codebase will be documented in this file.
   - Added business validation rules and sequential semester sequence checks (`tests/test_academic_service.py`).
   - Added REST integration and bulk endpoint test suite (`tests/test_academic_api.py`).
 
+## [1.4.0] - 2026-07-08
+
+### Added
+- **Capabilities Registry Context**: Built Modules & Capabilities engine to allow decoupled, plugin-based capability installations and validation.
+- **Capabilities Database Model (`Capability`)**: Designed Beanie ODM document with category, status, visibility, and license tier enums, scoped by tenant with compound unique indexes.
+- **Exceptions Definition**: Created specialized capability exception handlers (`CapabilityNotFound`, `DependencyMissing`, `CircularDependency`, `LicenseViolation`, `CompatibilityViolation`, `CoreModuleProtected`).
+- **Capabilities Repository (`CapabilityRepository`)**: Implemented standard CRUD, finders, exist checks, lists, and counts.
+- **Capabilities Service (`CapabilityService`)**: Implemented business validation and dependency resolution logic:
+  - DFS circular dependency checker with recursive traversal path loops detection.
+  - License validation algorithm mapping subscription plan levels to license tier numeric values.
+  - Active dependent disable validation block preventing shutting down capabilities required by other active tools.
+  - Core system capabilities protection block preventing deletion/disablement of standard platform nodes.
+  - Seeding utility dynamically building the 20 standard capabilities for educational tenants.
+- **Capabilities Router (`capability_router`)**: Created REST endpoints in `api/v1/capability.py` mounted on `/api/v1/capabilities`:
+  - List capability catalogs with pagination, sorting, and categories/enabled/installed filters.
+  - Seed, install, enable, disable, and get individual items.
+  - Log audit trace lines.
+- **Automated Tests**:
+  - Added repository tests (`test_capability_repository.py`).
+  - Added service tests (`test_capability_service.py`) covering cycles, licenses, and disable rules.
+  - Added API integration tests (`test_capability_api.py`) validating JSON outputs and REST methods.
+
+

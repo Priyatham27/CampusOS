@@ -118,5 +118,29 @@ class CoreModuleProtected(OrganizationException):
     status_code: int = status.HTTP_403_FORBIDDEN
     detail: str = "Core system capabilities cannot be disabled or deleted."
 
+class ConfigurationNotFound(OrganizationException):
+    status_code: int = status.HTTP_404_NOT_FOUND
+    detail: str = "Configuration key not found."
+
+class DuplicateConfiguration(OrganizationException):
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    detail: str = "Configuration key already exists in this scope and environment."
+
+class InvalidScope(OrganizationException):
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    detail: str = "Invalid configuration scope provided."
+
+class InvalidEnvironment(OrganizationException):
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    detail: str = "Invalid runtime environment provided."
+
+class RolloutConflict(OrganizationException):
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    detail: str = "Invalid rollout configuration constraints."
+
+class FeatureNotFound(OrganizationException):
+    status_code: int = status.HTTP_404_NOT_FOUND
+    detail: str = "Feature flag not found."
+
 
 

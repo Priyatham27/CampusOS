@@ -73,4 +73,24 @@ All notable changes to the CampusOS codebase will be documented in this file.
   - Added service tests (`test_capability_service.py`) covering cycles, licenses, and disable rules.
   - Added API integration tests (`test_capability_api.py`) validating JSON outputs and REST methods.
 
+## [1.5.0] - 2026-07-08
+
+### Added
+- **Runtime Configuration Context**: Developed runtime configuration and feature flag engines to drive CampusOS runtime settings.
+- **Database Models (`Configuration` & `FeatureFlag`)**:
+  - `Configuration`: Encapsulates hierarchical parameters scoped by Global/System, Organization, Module, and User contexts, stored with compound unique index validation check constraints.
+  - `FeatureFlag`: Controls rollouts using category categorizations, allowed roles/users/departments/programs/semesters, rollout percentages, and expiration schedules.
+- **Exceptions Definition**: Created exceptions `ConfigurationNotFound`, `DuplicateConfiguration`, `InvalidScope`, `InvalidEnvironment`, `RolloutConflict`, `FeatureNotFound`.
+- **Repositories (`ConfigurationRepository` & `FeatureFlagRepository`)**: Supports CRUD operations, exists, query listings, hierarchy query matches, and soft-delete behaviors.
+- **Service (`ConfigurationService`)**:
+  - Hierarchical Config Resolution: Evaluates the config tree (System -> Organization -> Module -> User) to deliver overriding parameters.
+  - Deterministic Cohort Rollout Evaluation: Determines if a request falls within allowed roles, departments, programs, or deterministic percentage hashes of the user ID.
+  - Generational Caching Layer: Integrates Redis or `InMemoryCache` using cached key version numbers to implement instant cache invalidation without wildcard key scans.
+- **API Router**: Mounts endpoints under `/runtime` for config and features, mounting enable/disable/evaluate hooks, and compliance log audit trails.
+- **Automated Tests**:
+  - Added repository tests (`test_config_repository.py`).
+  - Added service tests (`test_config_service.py`) validating caching invalidation and overrides.
+  - Added API tests (`test_config_api.py`) validating endpoints.
+
+
 

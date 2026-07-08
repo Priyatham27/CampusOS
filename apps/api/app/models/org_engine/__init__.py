@@ -3,6 +3,7 @@ from apps.api.app.models.org_engine.academic import AcademicYear, Semester, Depa
 from apps.api.app.models.org_engine.curriculum import Program, Course
 from apps.api.app.models.org_engine.extension import Module, FeatureFlag
 from apps.api.app.models.org_engine.capability import Capability
+from apps.api.app.models.org_engine.config import Configuration
 
 ORG_ENGINE_MODELS = [
     University,
@@ -19,7 +20,8 @@ ORG_ENGINE_MODELS = [
     Course,
     Module,
     FeatureFlag,
-    Capability
+    Capability,
+    Configuration
 ]
 
 __all__ = [
@@ -38,5 +40,6 @@ __all__ = [
     "Module",
     "FeatureFlag",
     "Capability",
+    "Configuration",
     "ORG_ENGINE_MODELS"
 ]

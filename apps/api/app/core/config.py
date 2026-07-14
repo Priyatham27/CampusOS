@@ -1,7 +1,7 @@
 import os
 from typing import List, Dict, Any
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, model_validator
 
 class Settings(BaseSettings):
     # App Settings
@@ -9,6 +9,21 @@ class Settings(BaseSettings):
     ENV: str = "development"
     DEBUG: bool = True
     API_V1_STR: str = "/api/v1"
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_alternate_env_vars(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            # Map ENVIRONMENT -> ENV
+            if "ENVIRONMENT" in values and "ENV" not in values:
+                values["ENV"] = values["ENVIRONMENT"]
+            # Map MONGODB_URI -> MONGODB_URL
+            if "MONGODB_URI" in values and "MONGODB_URL" not in values:
+                values["MONGODB_URL"] = values["MONGODB_URI"]
+            # Map JWT_SECRET -> SECRET_KEY
+            if "JWT_SECRET" in values and "SECRET_KEY" not in values:
+                values["SECRET_KEY"] = values["JWT_SECRET"]
+        return values
     
     # Security & Tokens
     SECRET_KEY: str = Field(default="supersecretkeyforcampusosmvpdevelopmentphase1", env="SECRET_KEY")
@@ -48,6 +63,11 @@ class Settings(BaseSettings):
 
     class Config:
         case_sensitive = True
-        env_file = ".env"
+        extra = "ignore"
+        # Resolve the .env file path dynamically relative to this configuration file
+        env_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            ".env"
+        )
 
 settings = Settings()

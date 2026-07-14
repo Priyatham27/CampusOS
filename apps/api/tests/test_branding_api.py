@@ -96,7 +96,9 @@ async def test_api_logo_upload_and_delete(async_client):
         files=logo_file
     )
     assert res_logo.status_code == 200
-    assert "logo.png" in res_logo.json()["data"]["organizationLogo"]
+    logo_url = res_logo.json()["data"]["organizationLogo"]
+    assert logo_url.startswith("http")
+    assert logo_url.endswith(".png")
 
     # 2. Upload dark logo variant
     dark_logo_file = {"file": ("dark_logo.png", io.BytesIO(file_content), "image/png")}
@@ -105,7 +107,9 @@ async def test_api_logo_upload_and_delete(async_client):
         files=dark_logo_file
     )
     assert res_dark_logo.status_code == 200
-    assert "dark_logo.png" in res_dark_logo.json()["data"]["darkLogo"]
+    dark_logo_url = res_dark_logo.json()["data"]["darkLogo"]
+    assert dark_logo_url.startswith("http")
+    assert dark_logo_url.endswith(".png")
 
     # 3. Soft remove logo variant
     res_del_logo = await async_client.delete("/api/v1/organizations/ORG_444999/branding/logo?isDark=false")

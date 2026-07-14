@@ -5,11 +5,14 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from contextlib import asynccontextmanager
 
+from beanie import init_beanie
 from apps.api.app.core.config import settings
 from apps.api.app.core.database import db_manager
 from apps.api.app.core.logger import logger
 from apps.api.app.middleware.tenant_middleware import TenantMiddleware
 from apps.api.app.api.v1.router import api_router
+from apps.api.app.models.org_engine import ORG_ENGINE_MODELS
+from apps.api.app.models.identity import IDENTITY_MODELS
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -17,6 +20,13 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database connections on startup...")
     try:
         db_manager.connect()
+        if db_manager.db is not None:
+            logger.info("Initializing Beanie ODM with document models...")
+            await init_beanie(
+                database=db_manager.db,
+                document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS
+            )
+            logger.info("Beanie ODM initialization completed successfully.")
     except Exception as e:
         logger.error(f"Database setup error during startup lifecycle: {e}")
     yield

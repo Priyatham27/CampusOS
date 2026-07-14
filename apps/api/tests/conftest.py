@@ -13,6 +13,7 @@ from httpx import AsyncClient, ASGITransport
 from apps.api.app.main import app
 from apps.api.app.core.database import db_manager
 from apps.api.app.models.org_engine import ORG_ENGINE_MODELS
+from apps.api.app.models.identity import IDENTITY_MODELS
 from apps.api.app.repositories.organization import OrganizationRepository
 from apps.api.app.services.organization import OrganizationService
 
@@ -22,8 +23,8 @@ async def test_db_client():
     client = AsyncIOMotorClient("mongodb://localhost:27017/campusos_test_db")
     db = client.get_database("campusos_test_db")
     
-    # Initialize Beanie Document Models
-    await init_beanie(database=db, document_models=ORG_ENGINE_MODELS)
+    # Initialize Beanie Document Models for both modules
+    await init_beanie(database=db, document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS)
     
     # Patch the global db_manager to use this test connection and disable standard connect calls
     db_manager.client = client

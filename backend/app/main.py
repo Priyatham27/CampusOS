@@ -16,6 +16,7 @@ from app.middleware.request_logging_middleware import RequestLoggingMiddleware
 from app.api.v1.router import api_router
 from app.models.org_engine import ORG_ENGINE_MODELS
 from app.models.identity import IDENTITY_MODELS
+from app.models.catalog import CATALOG_MODELS
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,7 +28,7 @@ async def lifespan(app: FastAPI):
             logger.info("Initializing Beanie ODM with document models...")
             await init_beanie(
                 database=db_manager.db,
-                document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS
+                document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS + CATALOG_MODELS
             )
             logger.info("Beanie ODM initialization completed successfully.")
             # Run startup bootstrapping for identity components
@@ -87,6 +88,7 @@ from app.core.session_exceptions import SessionException
 from app.core.authorization_exceptions import AuthorizationException
 from app.core.user_exceptions import UserException
 from app.academic.exceptions import AcademicException
+from app.catalog.exceptions import CatalogException
 
 @app.exception_handler(UserException)
 async def user_exception_handler(request: Request, exc: UserException):
@@ -103,6 +105,19 @@ async def user_exception_handler(request: Request, exc: UserException):
 
 @app.exception_handler(AcademicException)
 async def academic_exception_handler(request: Request, exc: AcademicException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "message": exc.detail,
+            "data": None,
+            "meta": {},
+            "errors": [exc.__class__.__name__]
+        }
+    )
+
+@app.exception_handler(CatalogException)
+async def catalog_exception_handler(request: Request, exc: CatalogException):
     return JSONResponse(
         status_code=exc.status_code,
         content={

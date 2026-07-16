@@ -12,6 +12,7 @@ from app.api.v1.audit import router as audit_router
 from app.api.v1.upload import router as upload_router
 from app.api.v1.branding import router as branding_router
 from app.academic.router import router as academic_router  # DDD Academic Bounded Context
+from app.catalog.router import router as catalog_router      # Catalog Engine Bounded Context
 from app.api.v1.capability import router as capability_router
 from app.api.v1.config import router as config_router
 from app.api.v1.credentials import router as credentials_router
@@ -26,6 +27,7 @@ api_router.include_router(credentials_router, prefix="/credentials", tags=["Cred
 api_router.include_router(organizations_router, prefix="/organizations", tags=["Organizations Engine"])
 api_router.include_router(branding_router)
 api_router.include_router(academic_router, tags=["Academic Platform"])
+api_router.include_router(catalog_router, tags=["Catalog Engine"])
 api_router.include_router(capability_router, prefix="/capabilities", tags=["Capabilities Engine"])
 api_router.include_router(config_router, prefix="/runtime", tags=["Runtime Configuration Engine"])
 api_router.include_router(user_router, prefix="/users", tags=["Users"])

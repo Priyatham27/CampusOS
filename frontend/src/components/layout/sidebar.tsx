@@ -18,7 +18,8 @@ import {
   Lock,
   ChevronLeft,
   ChevronRight,
-  GraduationCap
+  GraduationCap,
+  Library,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const coreNav = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Academic", href: "/dashboard/academic", icon: GraduationCap, perm: "academic:read" },
+    { name: "Catalog", href: "/dashboard/catalog", icon: Library, perm: "academic:read" },
     { name: "Users", href: "/dashboard/users", icon: Users, perm: "users:read" },
     { name: "Roles & RBAC", href: "/dashboard/roles", icon: ShieldCheck, perm: "roles:read" },
     { name: "Audit Trail", href: "/dashboard/audit", icon: History, perm: "audit:read" },

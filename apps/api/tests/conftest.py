@@ -39,12 +39,21 @@ async def test_db_client():
 
 @pytest.fixture(autouse=True)
 async def clean_database(test_db_client):
-    """Automatically clear all collection documents before running each test case."""
+    """Automatically clear all collection documents and flush the cache before running each test case."""
     db = test_db_client.get_database("campusos_test_db")
     collections = await db.list_collection_names()
     for col in collections:
         if not col.startswith("system."):
             await db[col].delete_many({})
+
+    # Flush the caching layer to prevent cross-test leakage
+    from apps.api.app.core.database import get_redis
+    redis = get_redis()
+    if redis:
+        if hasattr(redis, "flushall"):
+            redis.flushall()
+        elif hasattr(redis, "flushdb"):
+            redis.flushdb()
 
 @pytest.fixture
 def repo():

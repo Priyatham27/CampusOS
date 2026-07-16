@@ -113,3 +113,9 @@ test_run_log.txt
 # ========================
 data/db/
 *.dump
+
+# ========================
+# Uploads / Test uploads
+# ========================
+apps/api/apps/
+static/uploads/

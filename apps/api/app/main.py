@@ -10,6 +10,9 @@ from apps.api.app.core.config import settings
 from apps.api.app.core.database import db_manager
 from apps.api.app.core.logger import logger
 from apps.api.app.middleware.tenant_middleware import TenantMiddleware
+from apps.api.app.middleware.identity_middleware import IdentityMiddleware
+from apps.api.app.middleware.request_context_middleware import RequestContextMiddleware
+from apps.api.app.middleware.request_logging_middleware import RequestLoggingMiddleware
 from apps.api.app.api.v1.router import api_router
 from apps.api.app.models.org_engine import ORG_ENGINE_MODELS
 from apps.api.app.models.identity import IDENTITY_MODELS
@@ -27,6 +30,11 @@ async def lifespan(app: FastAPI):
                 document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS
             )
             logger.info("Beanie ODM initialization completed successfully.")
+            # Run startup bootstrapping for identity components
+            from apps.api.app.services.identity_bootstrap import IdentityBootstrapService
+            bootstrap_svc = IdentityBootstrapService()
+            await bootstrap_svc.bootstrap()
+            logger.info("Lifespan startup sequence completed successfully.")
     except Exception as e:
         logger.error(f"Database setup error during startup lifecycle: {e}")
     yield
@@ -50,8 +58,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register Tenant Context Middleware
+# Register Tenant and Identity Middleware pipeline
 app.add_middleware(TenantMiddleware)
+app.add_middleware(IdentityMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RequestContextMiddleware)
 
 # Standardized Error Exception Handlers
 @app.exception_handler(RequestValidationError)
@@ -70,9 +81,79 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 from apps.api.app.core.exceptions import OrganizationException
+from apps.api.app.core.credential_exceptions import CredentialException
+from apps.api.app.core.auth_exceptions import AuthenticationException
+from apps.api.app.core.session_exceptions import SessionException
+from apps.api.app.core.authorization_exceptions import AuthorizationException
+from apps.api.app.core.user_exceptions import UserException
+
+@app.exception_handler(UserException)
+async def user_exception_handler(request: Request, exc: UserException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "message": exc.detail,
+            "data": None,
+            "meta": {},
+            "errors": [exc.__class__.__name__]
+        }
+    )
 
 @app.exception_handler(OrganizationException)
 async def organization_exception_handler(request: Request, exc: OrganizationException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "message": exc.detail,
+            "data": None,
+            "meta": {},
+            "errors": [exc.__class__.__name__]
+        }
+    )
+
+@app.exception_handler(AuthorizationException)
+async def authorization_exception_handler(request: Request, exc: AuthorizationException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "message": exc.detail,
+            "data": None,
+            "meta": {},
+            "errors": [exc.__class__.__name__]
+        }
+    )
+
+@app.exception_handler(SessionException)
+async def session_exception_handler(request: Request, exc: SessionException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "message": exc.detail,
+            "data": None,
+            "meta": {},
+            "errors": [exc.__class__.__name__]
+        }
+    )
+
+@app.exception_handler(CredentialException)
+async def credential_exception_handler(request: Request, exc: CredentialException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "message": exc.detail,
+            "data": None,
+            "meta": {},
+            "errors": [exc.__class__.__name__]
+        }
+    )
+
+@app.exception_handler(AuthenticationException)
+async def authentication_exception_handler(request: Request, exc: AuthenticationException):
     return JSONResponse(
         status_code=exc.status_code,
         content={

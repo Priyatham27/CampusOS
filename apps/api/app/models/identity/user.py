@@ -14,10 +14,13 @@ PHONE_REGEX = re.compile(r"^\+?[0-9\s\-()]{7,25}$")
 USERNAME_REGEX = re.compile(r"^[a-zA-Z0-9_\-\.]{3,30}$")
 
 class UserStatus(str, Enum):
+    DRAFT = "DRAFT"
+    PENDING_VERIFICATION = "PENDING_VERIFICATION"
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
     SUSPENDED = "SUSPENDED"
     LOCKED = "LOCKED"
+    ARCHIVED = "ARCHIVED"
 
 class AccountType(str, Enum):
     STUDENT = "STUDENT"
@@ -26,6 +29,8 @@ class AccountType(str, Enum):
     SUPERADMIN = "SUPERADMIN"
     SUPPORT = "SUPPORT"
     VOLUNTEER = "VOLUNTEER"
+    COORDINATOR = "COORDINATOR"
+    GUEST = "GUEST"
 
 class StudentStatus(str, Enum):
     ACTIVE = "ACTIVE"
@@ -46,7 +51,6 @@ class User(BaseDocument):
     organization_id: PydanticObjectId = Field(..., alias="organizationId")
     username: str = Field(..., min_length=3, max_length=30)
     email: EmailStr = Field(...)
-    password_hash: str = Field(..., alias="passwordHash")
     status: UserStatus = Field(default=UserStatus.ACTIVE)
     account_type: AccountType = Field(default=AccountType.STUDENT, alias="accountType")
     email_verified: bool = Field(default=False, alias="emailVerified")

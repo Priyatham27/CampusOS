@@ -1,332 +1,207 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Response, Request
-from datetime import datetime, timedelta
-import motor.motor_asyncio
-from typing import Dict, Any
+import jwt
+from fastapi import APIRouter, Depends, Query, Path, status, Request, Response
+from typing import Optional, List
 
-from apps.api.app.core.database import get_db
-from apps.api.app.core.security import (
-    hash_password,
-    verify_password,
-    create_access_token,
-    create_refresh_token,
-    set_auth_cookies,
-    clear_auth_cookies
-)
 from apps.api.app.core.config import settings
-from apps.api.app.core.logger import logger
-from apps.api.app.models.models import generate_prefixed_id, User, Tenant, Role, AuditLog
-from apps.api.app.middleware.auth import get_current_user
-from apps.api.app.schemas.schemas import (
-    APIResponse,
-    LoginRequest,
-    UserResponse,
-    UserWithDetails,
-    TenantResponse,
-    RoleResponse
+from apps.api.app.core.security import set_auth_cookies, clear_auth_cookies, extract_access_token, decode_access_token
+from apps.api.app.core.identity_context import IdentityContext, get_current_identity
+from apps.api.app.core.auth_exceptions import InvalidToken, AccountDisabled
+from apps.api.app.schemas.schemas import APIResponse
+from apps.api.app.schemas.auth_schemas import (
+    AuthLoginRequest,
+    AuthRefreshRequest,
+    AuthVerifyEmailRequest,
+    AuthResponseDataSchema,
+    AuthUserResponse
 )
+from apps.api.app.services.authentication import AuthenticationService, get_authentication_service
+from apps.api.app.models.identity.user import User, UserStatus
+from beanie import PydanticObjectId
 
 router = APIRouter()
 
-async def seed_defaults(db: motor.motor_asyncio.AsyncIOMotorDatabase):
-    """Seed default tenant configuration, roles, system parameters, and SuperAdmin user if database is empty."""
+def get_client_ip(request: Request) -> Optional[str]:
+    """Helper to extract IP address from request headers or client details."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+async def get_current_active_user(request: Request) -> User:
+    """Retrieve active user context using Beanie ODM and access token."""
+    from datetime import datetime
+    from apps.api.app.models.identity.session import Session
+
+    token = extract_access_token(request)
+    if not token:
+        raise InvalidToken("Session token missing. Authentication required.")
+        
+    user_id = decode_access_token(token)
+    if user_id is None:
+        raise InvalidToken("Session invalid or expired. Please sign in again.")
+        
+    # Check if session exists in DB (revocation check)
     try:
-        users_count = await db["users"].count_documents({})
-        if users_count > 0:
-            # Already seeded
-            return None
+        decoded_payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"verify_aud": False}
+        )
+        session_id = decoded_payload.get("sessionId")
+        if not session_id:
+            raise InvalidToken("Session invalid.")
+            
+        session_exists = await Session.find_one(Session.session_id == session_id, Session.expires_at > datetime.utcnow())
+        if not session_exists:
+            raise InvalidToken("Session has been terminated or expired.")
+    except Exception:
+        raise InvalidToken("Session invalid or expired. Please sign in again.")
+        
+    try:
+        obj_id = PydanticObjectId(user_id)
+        user = await User.find_one(User.id == obj_id, User.is_deleted == False)
+    except Exception:
+        user = await User.find_one(User.user_id == user_id, User.is_deleted == False)
+        
+    if not user:
+        raise InvalidToken("Session invalid or expired. Please sign in again.")
+        
+    if user.status in (UserStatus.SUSPENDED, UserStatus.INACTIVE):
+        raise AccountDisabled("User account is suspended or inactive.")
+        
+    return user
 
-        logger.info("Database is empty. Seeding defaults for CampusOS Tenant Platform Foundation...")
-        
-        # 1. Create Default Tenant
-        tenant_id = generate_prefixed_id("ten")
-        default_tenant = {
-            "_id": tenant_id,
-            "name": "CampusOS Main Academy",
-            "slug": settings.DEFAULT_TENANT_SLUG,
-            "config": {
-                "theme": {
-                    "primary_color": "#4f46e5",
-                    "secondary_color": "#0891b2",
-                    "logo_url": "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=128&h=128&fit=crop&q=80",
-                    "favicon_url": "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=32&h=32&fit=crop&q=80",
-                    "custom_css": ""
-                },
-                "custom_domain": "localhost",
-                "active_modules": ["core"],
-                "feature_flags": {
-                    "enable_events": True,
-                    "enable_attendance": False,
-                    "enable_certificates": False,
-                    "enable_clubs": False,
-                    "enable_analytics": False,
-                    "enable_audit_logs": True,
-                    "enable_file_uploads": True
-                }
-            },
-            "is_active": True,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
-        }
-        await db["tenants"].insert_one(default_tenant)
 
-        # 2. Create Default Roles
-        roles_to_create = [
-            {
-                "_id": generate_prefixed_id("rol"),
-                "name": "SuperAdmin",
-                "description": "System-wide owner with bypass privileges.",
-                "permissions": ["*"],
-                "is_system": True,
-                "tenant_id": tenant_id
-            },
-            {
-                "_id": generate_prefixed_id("rol"),
-                "name": "Admin",
-                "description": "Tenant administrator.",
-                "permissions": [
-                    "users:read", "users:manage", 
-                    "roles:read", "roles:manage", 
-                    "settings:read", "settings:write", 
-                    "audit:read", "upload:file"
-                ],
-                "is_system": True,
-                "tenant_id": tenant_id
-            },
-            {
-                "_id": generate_prefixed_id("rol"),
-                "name": "Staff",
-                "description": "Educational staff / faculty.",
-                "permissions": [
-                    "users:read", "settings:read", "upload:file"
-                ],
-                "is_system": True,
-                "tenant_id": tenant_id
-            },
-            {
-                "_id": generate_prefixed_id("rol"),
-                "name": "Student",
-                "description": "Standard college student.",
-                "permissions": [
-                    "settings:read"
-                ],
-                "is_system": True,
-                "tenant_id": tenant_id
-            }
-        ]
-        
-        role_map = {}
-        for r in roles_to_create:
-            await db["roles"].insert_one(r)
-            role_map[r["name"]] = r["_id"]
-
-        # 3. Create default SuperAdmin user
-        user_id = generate_prefixed_id("usr")
-        admin_user = {
-            "_id": user_id,
-            "email": "admin@campusos.com",
-            "hashed_password": hash_password("password123"),
-            "full_name": "CampusOS Administrator",
-            "tenant_id": tenant_id,
-            "role_id": role_map["SuperAdmin"],
-            "is_active": True,
-            "created_at": datetime.utcnow(),
-            "last_login": None
-        }
-        await db["users"].insert_one(admin_user)
-        logger.info(f"Seeded Tenant: {tenant_id}, Admin User: {user_id} (admin@campusos.com / password123)")
-        
-        # 4. Create default System Settings document
-        await db["system_settings"].insert_one({
-            "_id": "sys_settings",
-            "general": {},
-            "branding": {
-                "platform_name": "CampusOS",
-                "logo_url": None,
-                "support_email": "support@campusos.com"
-            },
-            "storage": {
-                "provider": "local",
-                "upload_limit_mb": 10
-            },
-            "email": {
-                "smtp_host": "smtp.mailgun.org",
-                "smtp_port": 587,
-                "smtp_user": None,
-                "sender_name": "CampusOS Notifications"
-            },
-            "security": {
-                "mfa_enabled": False,
-                "password_history_limit": 3,
-                "cookie_secure": False
-            },
-            "updated_at": datetime.utcnow()
-        })
-        
-        # Write Audit Log
-        await db["audit_logs"].insert_one({
-            "_id": generate_prefixed_id("aud"),
-            "tenant_id": tenant_id,
-            "user_id": user_id,
-            "user_email": "admin@campusos.com",
-            "action": "system_seeding",
-            "category": "security",
-            "details": {"message": "Auto seeded default multi-tenant platform configuration"},
-            "created_at": datetime.utcnow()
-        })
-        
-        return tenant_id
-    except Exception as e:
-        logger.error(f"Error seeding database: {e}")
-        return None
-
-@router.post("/login", response_model=APIResponse[Dict[str, Any]])
+@router.post(
+    "/login",
+    response_model=APIResponse[AuthResponseDataSchema],
+    summary="Authenticate user and issue session tokens"
+)
 async def login(
+    request: Request,
     response: Response,
-    login_data: LoginRequest,
-    db: motor.motor_asyncio.AsyncIOMotorDatabase = Depends(get_db)
+    payload: AuthLoginRequest,
+    service: AuthenticationService = Depends(get_authentication_service)
 ):
-    """Authenticate user, sets HttpOnly cookies, and returns standard success response."""
-    # Ensure default data is seeded if database is fresh
-    await seed_defaults(db)
-    
-    user_doc = await db["users"].find_one({"email": login_data.email.lower()})
-    if not user_doc or not verify_password(login_data.password, user_doc["hashed_password"]):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Incorrect email or password"
-        )
-        
-    if not user_doc.get("is_active", True):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User account is deactivated"
-        )
-        
-    user_id = str(user_doc["_id"])
-    tenant_id = str(user_doc["tenant_id"])
-    
-    # Update last login
-    await db["users"].update_one(
-        {"_id": user_doc["_id"]},
-        {"$set": {"last_login": datetime.utcnow()}}
+    # Resolve organization from Tenant context
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if not tenant_id or tenant_id == "ten_unseeded":
+        tenant_id = request.headers.get("x-tenant-slug") or settings.DEFAULT_TENANT_SLUG
+
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    ip = get_client_ip(request)
+
+    res = await service.login(
+        org_id_str=tenant_id,
+        payload=payload.model_dump(by_alias=False, exclude_unset=True),
+        user_agent=user_agent,
+        ip_address=ip
     )
     
-    # Audit log
-    await db["audit_logs"].insert_one({
-        "_id": generate_prefixed_id("aud"),
-        "tenant_id": tenant_id,
-        "user_id": user_id,
-        "user_email": user_doc["email"],
-        "action": "user_login",
-        "category": "security",
-        "details": {"message": f"Successful login for {user_doc['email']}"},
-        "created_at": datetime.utcnow()
-    })
+    set_auth_cookies(response, res["accessToken"], res["refreshToken"])
     
-    # Generate tokens
-    access_token = create_access_token(subject=user_id)
-    refresh_token = create_refresh_token(subject=user_id)
-    
-    # Set cookies
-    set_auth_cookies(response, access_token, refresh_token)
-    
-    return {
-        "success": True,
-        "message": "Authenticated successfully. Secure session cookies assigned.",
-        "data": {
-            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            "token_type": "bearer"
-        },
-        "meta": {},
-        "errors": []
-    }
+    return APIResponse(
+        success=True,
+        message="Logged in successfully.",
+        data=AuthResponseDataSchema.model_validate(res)
+    )
 
-@router.post("/logout", response_model=APIResponse[None])
+@router.post(
+    "/logout",
+    response_model=APIResponse[None],
+    summary="Invalidate user session"
+)
 async def logout(
+    request: Request,
     response: Response,
-    current_user: User = Depends(get_current_user),
-    db: motor.motor_asyncio.AsyncIOMotorDatabase = Depends(get_db)
+    service: AuthenticationService = Depends(get_authentication_service)
 ):
-    """Deletes authentication cookies and signs user out."""
+    token = extract_access_token(request)
+    ip = get_client_ip(request)
+    if token:
+        try:
+            # Decode ignoring expiry to allow logouts of expired sessions
+            decoded = jwt.decode(token, settings.SECRET_KEY, options={"verify_exp": False, "verify_aud": False}, algorithms=[settings.ALGORITHM])
+            session_id = decoded.get("sessionId")
+            if session_id:
+                await service.logout(session_id, ip_address=ip)
+        except Exception:
+            pass
+            
     clear_auth_cookies(response)
-    
-    # Audit log
-    await db["audit_logs"].insert_one({
-        "_id": generate_prefixed_id("aud"),
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "user_email": current_user.email,
-        "action": "user_logout",
-        "category": "security",
-        "details": {"message": "Session terminated successfully"},
-        "created_at": datetime.utcnow()
-    })
-    
-    return {
-        "success": True,
-        "message": "Logged out successfully. Authentication cookies cleared.",
-        "data": None,
-        "meta": {},
-        "errors": []
-    }
-
-@router.get("/me", response_model=APIResponse[UserWithDetails])
-async def get_me(
-    current_user: User = Depends(get_current_user),
-    db: motor.motor_asyncio.AsyncIOMotorDatabase = Depends(get_db)
-):
-    """Retrieve details of the active user session including their role configurations and tenant branding configs."""
-    # Resolve Tenant
-    tenant_doc = await db["tenants"].find_one({"_id": current_user.tenant_id})
-    tenant = None
-    if tenant_doc:
-        tenant_doc["_id"] = str(tenant_doc["_id"])
-        tenant = TenantResponse(**tenant_doc)
-        
-    # Resolve Role
-    role_doc = await db["roles"].find_one({"_id": current_user.role_id})
-    role = None
-    if role_doc:
-        role_doc["_id"] = str(role_doc["_id"])
-        role = RoleResponse(**role_doc)
-        
-    user_res = UserWithDetails(
-        id=current_user.id,
-        email=current_user.email,
-        full_name=current_user.full_name,
-        tenant_id=current_user.tenant_id,
-        role_id=current_user.role_id,
-        is_active=current_user.is_active,
-        created_at=current_user.created_at,
-        last_login=current_user.last_login,
-        tenant=tenant,
-        role=role
+    return APIResponse(
+        success=True,
+        message="Logged out successfully.",
+        data=None
     )
-    
-    return {
-        "success": True,
-        "message": "Active user session resolved.",
-        "data": user_res,
-        "meta": {},
-        "errors": []
-    }
 
-@router.post("/seed", response_model=APIResponse[Dict[str, Any]])
-async def manual_seed(db: motor.motor_asyncio.AsyncIOMotorDatabase = Depends(get_db)):
-    """Exposes a route to seed tenant configurations."""
-    seeded = await seed_defaults(db)
-    if seeded:
-        return {
-            "success": True,
-            "message": "Database successfully seeded.",
-            "data": {"tenant_id": seeded},
-            "meta": {},
-            "errors": []
-        }
-    return {
-        "success": True,
-        "message": "Database already contains data, seeding skipped.",
-        "data": {},
-        "meta": {},
-        "errors": []
-    }
+@router.post(
+    "/refresh",
+    response_model=APIResponse[AuthResponseDataSchema],
+    summary="Validate refresh token and issue a new access token"
+)
+async def refresh(
+    response: Response,
+    payload: AuthRefreshRequest,
+    service: AuthenticationService = Depends(get_authentication_service)
+):
+    res = await service.refresh_access_token(payload.refresh_token)
+    set_auth_cookies(response, res["accessToken"], res["refreshToken"])
+    return APIResponse(
+        success=True,
+        message="Access token refreshed successfully.",
+        data=AuthResponseDataSchema.model_validate(res)
+    )
+
+@router.get(
+    "/me",
+    response_model=APIResponse[AuthUserResponse],
+    summary="Retrieve active user profile"
+)
+async def me(
+    current_user: User = Depends(get_current_active_user)
+):
+    return APIResponse(
+        success=True,
+        message="User profile resolved.",
+        data=AuthUserResponse.model_validate(current_user)
+    )
+
+@router.get(
+    "/permissions/me",
+    response_model=APIResponse[List[str]],
+    summary="Retrieve effective permissions for current user"
+)
+async def get_my_permissions(
+    context: IdentityContext = Depends(get_current_identity)
+):
+    from apps.api.app.services.authorization import AuthorizationService
+    from typing import List
+    service = AuthorizationService()
+    perms = await service.get_effective_permissions_for_user(
+        user_id=context.user.id,
+        org_id=context.organization.id,
+        active_roles=context.active_roles
+    )
+    return APIResponse(
+        success=True,
+        message="Effective user permissions resolved successfully.",
+        data=perms
+    )
+
+@router.post(
+    "/verify-email",
+    response_model=APIResponse[None],
+    summary="Verify user email address using token"
+)
+async def verify_email(
+    payload: AuthVerifyEmailRequest,
+    service: AuthenticationService = Depends(get_authentication_service)
+):
+    await service.verify_email(payload.user_id, payload.token)
+    return APIResponse(
+        success=True,
+        message="Email verified successfully. Account is now active.",
+        data=None
+    )

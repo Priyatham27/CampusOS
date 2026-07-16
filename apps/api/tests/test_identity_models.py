@@ -49,7 +49,6 @@ async def test_user_validation_success():
         organizationId=org_id,
         username="john.doe",
         email="john@avanthi.edu",
-        passwordHash="$2b$12$eImiTXuWVxfM37uY4JANj.18H7Y5vTWhLd4S5gN0V8nF6rJ",
         status=UserStatus.ACTIVE,
         accountType=AccountType.STUDENT,
         emailVerified=True
@@ -69,8 +68,7 @@ async def test_user_validation_failures():
             userId="INVALID_123456",
             organizationId=org_id,
             username="john.doe",
-            email="john@avanthi.edu",
-            passwordHash="hash"
+            email="john@avanthi.edu"
         )
 
     with pytest.raises(ValidationError):
@@ -79,8 +77,7 @@ async def test_user_validation_failures():
             userId="USR_123456",
             organizationId=org_id,
             username="john.doe",
-            email="not-an-email",
-            passwordHash="hash"
+            email="not-an-email"
         )
 
     with pytest.raises(ValidationError):
@@ -89,8 +86,7 @@ async def test_user_validation_failures():
             userId="USR_123456",
             organizationId=org_id,
             username="john@doe!",
-            email="john@avanthi.edu",
-            passwordHash="hash"
+            email="john@avanthi.edu"
         )
 
 async def test_profile_validation_success():
@@ -271,8 +267,7 @@ async def test_db_lifecycle_integration(repo):
         userId="USR_999000",
         organizationId=org_id,
         username="test.user.lifecycle",
-        email="lifecycle@avanthi.edu",
-        passwordHash="somehashvalue"
+        email="lifecycle@avanthi.edu"
     )
     inserted = await user.insert()
     assert inserted.id is not None

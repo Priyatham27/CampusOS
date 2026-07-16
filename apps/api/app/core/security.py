@@ -3,8 +3,28 @@ import bcrypt
 from datetime import datetime, timedelta, timezone
 from typing import Union, Any, Optional
 from fastapi import Response, Request
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 from apps.api.app.core.config import settings
 from apps.api.app.core.logger import logger
+
+# Thread-safe Argon2id password hasher with secure defaults
+ph = PasswordHasher()
+
+def hash_password_argon2(password: str) -> str:
+    """Hash password using Argon2id."""
+    return ph.hash(password)
+
+def verify_password_argon2(plain_password: str, hashed_password: str) -> bool:
+    """Verify Argon2id password match."""
+    try:
+        return ph.verify(hashed_password, plain_password)
+    except VerifyMismatchError:
+        return False
+    except Exception as e:
+        logger.error(f"Error verifying password with Argon2id: {e}")
+        return False
+
 
 def hash_password(password: str) -> str:
     """Hash password using direct bcrypt."""
@@ -45,7 +65,12 @@ def create_refresh_token(subject: Union[str, Any], expires_delta: timedelta = No
 def decode_access_token(token: str) -> Union[str, None]:
     """Decode and validate a JWT token."""
     try:
-        decoded_payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        decoded_payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"verify_aud": False}
+        )
         # Ensure it is an access token
         if decoded_payload.get("type") != "access":
             logger.warning("Decoded token is not of type 'access'")

@@ -90,25 +90,34 @@ class ConfigurationService:
         except Exception:
             pass
 
-    def _get_cfg_version(self, org_id: Optional[PydanticObjectId], key: str, env: str) -> str:
+    def _env_str(self, env: Any) -> str:
+        if hasattr(env, "value"):
+            return str(env.value)
+        return str(env)
+
+    def _get_cfg_version(self, org_id: Optional[PydanticObjectId], key: str, env: Any) -> str:
         org_key = str(org_id) if org_id else "system"
-        v_key = f"cfgver:{org_key}:{key}:{env}"
+        env_str = self._env_str(env)
+        v_key = f"cfgver:{org_key}:{key}:{env_str}"
         return self._get_cache(v_key) or "1"
 
-    def _bump_cfg_version(self, org_id: Optional[PydanticObjectId], key: str, env: str) -> None:
+    def _bump_cfg_version(self, org_id: Optional[PydanticObjectId], key: str, env: Any) -> None:
         org_key = str(org_id) if org_id else "system"
-        v_key = f"cfgver:{org_key}:{key}:{env}"
+        env_str = self._env_str(env)
+        v_key = f"cfgver:{org_key}:{key}:{env_str}"
         current = int(self._get_cache(v_key) or "1")
         self._set_cache(v_key, str(current + 1), ttl=86400)
 
-    def _get_flg_version(self, org_id: Optional[PydanticObjectId], key: str, env: str) -> str:
+    def _get_flg_version(self, org_id: Optional[PydanticObjectId], key: str, env: Any) -> str:
         org_key = str(org_id) if org_id else "system"
-        v_key = f"flgver:{org_key}:{key}:{env}"
+        env_str = self._env_str(env)
+        v_key = f"flgver:{org_key}:{key}:{env_str}"
         return self._get_cache(v_key) or "1"
 
-    def _bump_flg_version(self, org_id: Optional[PydanticObjectId], key: str, env: str) -> None:
+    def _bump_flg_version(self, org_id: Optional[PydanticObjectId], key: str, env: Any) -> None:
         org_key = str(org_id) if org_id else "system"
-        v_key = f"flgver:{org_key}:{key}:{env}"
+        env_str = self._env_str(env)
+        v_key = f"flgver:{org_key}:{key}:{env_str}"
         current = int(self._get_cache(v_key) or "1")
         self._set_cache(v_key, str(current + 1), ttl=86400)
 
@@ -241,10 +250,11 @@ class ConfigurationService:
         env_val = ConfigEnvironment(environment)
 
         # 1. Read through cache
-        ver = self._get_cfg_version(org_id, key, str(env_val))
+        ver = self._get_cfg_version(org_id, key, env_val)
         user_cache_key = user_id or "anonymous"
         module_cache_key = module or "global"
-        cache_key = f"cfgres:{str(org_id) if org_id else 'system'}:{module_cache_key}:{key}:{str(env_val)}:{user_cache_key}:{ver}"
+        env_str = self._env_str(env_val)
+        cache_key = f"cfgres:{str(org_id) if org_id else 'system'}:{module_cache_key}:{key}:{env_str}:{user_cache_key}:{ver}"
 
         cached = self._get_cache(cache_key)
         if cached:
@@ -420,9 +430,10 @@ class ConfigurationService:
         env_val = ConfigEnvironment(env_str)
 
         # 1. Read through cache
-        ver = self._get_flg_version(org_id, key, str(env_val))
+        ver = self._get_flg_version(org_id, key, env_val)
         ctx_hash = hashlib.md5(json.dumps(ctx, sort_keys=True).encode("utf-8")).hexdigest()
-        cache_key = f"flgeval:{str(org_id) if org_id else 'system'}:{key}:{str(env_val)}:{ctx_hash}:{ver}"
+        env_str = self._env_str(env_val)
+        cache_key = f"flgeval:{str(org_id) if org_id else 'system'}:{key}:{env_str}:{ctx_hash}:{ver}"
 
         cached = self._get_cache(cache_key)
         if cached is not None:

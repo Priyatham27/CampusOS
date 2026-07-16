@@ -9,6 +9,10 @@ from apps.api.app.models.identity.user import (
     StudentStatus,
     FacultyStatus
 )
+from apps.api.app.models.identity.credential import (
+    Credential,
+    CredentialType
+)
 from apps.api.app.models.identity.rbac import (
     Permission,
     Role,
@@ -33,6 +37,9 @@ from apps.api.app.models.identity.security import (
 from apps.api.app.models.identity.api_key import (
     APIKey
 )
+from apps.api.app.models.identity.policy import (
+    Policy
+)
 
 IDENTITY_MODELS = [
     User,
@@ -40,6 +47,7 @@ IDENTITY_MODELS = [
     StudentProfile,
     FacultyProfile,
     AdminProfile,
+    Credential,
     Permission,
     Role,
     UserRole,
@@ -52,7 +60,8 @@ IDENTITY_MODELS = [
     EmailVerificationToken,
     LoginHistory,
     SecurityEvent,
-    APIKey
+    APIKey,
+    Policy
 ]
 
 __all__ = [
@@ -61,6 +70,8 @@ __all__ = [
     "StudentProfile",
     "FacultyProfile",
     "AdminProfile",
+    "Credential",
+    "CredentialType",
     "UserStatus",
     "AccountType",
     "StudentStatus",
@@ -81,5 +92,7 @@ __all__ = [
     "SecurityEventType",
     "LoginStatus",
     "APIKey",
+    "Policy",
     "IDENTITY_MODELS"
 ]
+

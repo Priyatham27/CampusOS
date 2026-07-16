@@ -9,7 +9,7 @@ from apps.api.app.models.base import BaseDocument
 from apps.api.app.models.org_engine.organization import validate_professional_id
 
 SLUG_REGEX = re.compile(r"^[a-z0-9\-_]+$")
-PERMISSION_SLUG_REGEX = re.compile(r"^[a-z0-9\-_\*]+:[a-z0-9\-_\*]+$")
+PERMISSION_SLUG_REGEX = re.compile(r"^[a-z0-9\-_\*\.]+(?::|\.)[a-z0-9\-_\*\.]+(?::|\.)?[a-z0-9\-_\*\.]*$")
 
 class Permission(BaseDocument):
     permission_id: str = Field(..., alias="permissionId")

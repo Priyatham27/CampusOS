@@ -1,232 +1,346 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-import motor.motor_asyncio
-from datetime import datetime
-from typing import List
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from typing import List, Optional, Dict, Any
+from beanie import PydanticObjectId
 
-from apps.api.app.core.database import get_db
-from apps.api.app.core.security import hash_password
-from apps.api.app.middleware.auth import requires_permission
-from apps.api.app.models.models import generate_prefixed_id, User
-from apps.api.app.schemas.schemas import APIResponse, UserResponse, UserCreate, UserUpdate
+from apps.api.app.core.identity_context import IdentityContext, get_current_identity
+# Instead of buggy requires_permission from auth.py, we evaluate resolved context permissions directly
+def check_permission(required_permission: str):
+    async def dependency(context: IdentityContext = Depends(get_current_identity)) -> None:
+        if "super-admin" in context.active_roles:
+            return
+        if required_permission not in context.permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied. Required privilege: {required_permission}"
+            )
+    return dependency
+
+from apps.api.app.models.identity.user import User, Profile, StudentProfile, FacultyProfile, AdminProfile, AccountType
+from apps.api.app.models.identity.rbac import Role, UserRole
+from apps.api.app.schemas.schemas import APIResponse
+from apps.api.app.schemas.user_schemas import (
+    UserCreateSchema,
+    UserUpdateSchema,
+    UserResponseSchema,
+    ProfileResponseSchema,
+    AcademicAffiliationSchema,
+    BulkStatusUpdateSchema,
+    BulkRolesUpdateSchema,
+    BulkImportReport
+)
+from apps.api.app.services.user import UserService
+from apps.api.app.services.user_search import UserSearchService
+from apps.api.app.services.bulk_import import BulkImportService
 
 router = APIRouter()
 
-@router.get("", response_model=APIResponse[List[UserResponse]])
-async def list_users(
-    db: motor.motor_asyncio.AsyncIOMotorDatabase = Depends(get_db),
-    current_user: User = Depends(requires_permission("users:read"))
-):
-    """List users within the authenticated user's tenant boundary."""
-    cursor = db["users"].find({"tenant_id": current_user.tenant_id})
-    users = []
-    async for doc in cursor:
-        doc["_id"] = str(doc["_id"])
-        users.append(UserResponse(**doc))
-        
-    return {
-        "success": True,
-        "message": f"Successfully retrieved {len(users)} users.",
-        "data": users,
-        "meta": {"count": len(users)},
-        "errors": []
-    }
+def get_user_service() -> UserService:
+    return UserService()
 
-@router.post("", response_model=APIResponse[UserResponse], status_code=status.HTTP_201_CREATED)
-async def create_user(
-    user_data: UserCreate,
-    db: motor.motor_asyncio.AsyncIOMotorDatabase = Depends(get_db),
-    current_user: User = Depends(requires_permission("users:manage"))
-):
-    """Create a user. Scopes the new account to the administrator's active tenant."""
-    # Ensure they are only creating a user in their own tenant
-    if user_data.tenant_id != current_user.tenant_id:
-        role_doc = await db["roles"].find_one({"_id": current_user.role_id})
-        if not role_doc or role_doc.get("name") != "SuperAdmin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: tenant ID mismatch."
+def get_search_service() -> UserSearchService:
+    return UserSearchService()
+
+def get_bulk_service() -> BulkImportService:
+    return BulkImportService()
+
+async def build_user_response(user: User) -> UserResponseSchema:
+    """Helper method to construct complete response envelope for a user entity."""
+    profile = await Profile.find_one(Profile.user_id == user.id, Profile.is_deleted == False)
+    profile_schema = ProfileResponseSchema.model_validate(profile) if profile else None
+
+    user_roles = await UserRole.find(UserRole.user_id == user.id).to_list()
+    role_ids = [ur.role_id for ur in user_roles]
+    roles = await Role.find({"_id": {"$in": role_ids}, "isDeleted": False}).to_list()
+    role_slugs = [r.slug for r in roles]
+
+    affiliation = None
+    if user.account_type == AccountType.STUDENT:
+        sp = await StudentProfile.find_one(StudentProfile.user_id == user.id, StudentProfile.is_deleted == False)
+        if sp:
+            affiliation = AcademicAffiliationSchema(
+                rollNumber=sp.roll_number,
+                departmentId=str(sp.department_id),
+                programId=str(sp.program_id),
+                branchId=str(sp.branch_id),
+                semesterId=str(sp.semester_id),
+                sectionId=str(sp.section_id),
+                batch=sp.batch,
+                admissionYear=sp.admission_year,
+                graduationYear=sp.graduation_year
+            )
+    elif user.account_type == AccountType.FACULTY:
+        fp = await FacultyProfile.find_one(FacultyProfile.user_id == user.id, FacultyProfile.is_deleted == False)
+        if fp:
+            affiliation = AcademicAffiliationSchema(
+                employeeId=fp.employee_id,
+                designation=fp.designation,
+                departmentId=str(fp.department_id),
+                qualification=fp.qualification
+            )
+    elif user.account_type in (AccountType.ADMIN, AccountType.SUPERADMIN):
+        ap = await AdminProfile.find_one(AdminProfile.user_id == user.id, AdminProfile.is_deleted == False)
+        if ap:
+            affiliation = AcademicAffiliationSchema(
+                designation=ap.designation,
+                notes=ap.notes
             )
 
-    # Check email duplicate
-    existing = await db["users"].find_one({"email": user_data.email.lower()})
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email address already registered"
-        )
-
-    # Verify role exists in tenant
-    role_doc = await db["roles"].find_one({"_id": user_data.role_id})
-    if not role_doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Role not found"
-        )
-
-    user_id = generate_prefixed_id("usr")
-    new_user = {
-        "_id": user_id,
-        "email": user_data.email.lower(),
-        "hashed_password": hash_password(user_data.password),
-        "full_name": user_data.full_name,
-        "tenant_id": user_data.tenant_id,
-        "role_id": user_data.role_id,
-        "is_active": True,
-        "created_at": datetime.utcnow(),
-        "last_login": None
-    }
-
-    await db["users"].insert_one(new_user)
-
-    # Audit log using prefices
-    await db["audit_logs"].insert_one({
-        "_id": generate_prefixed_id("aud"),
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "user_email": current_user.email,
-        "action": "user_create",
-        "category": "audit",
-        "details": {"created_user_id": user_id, "email": new_user["email"]},
-        "created_at": datetime.utcnow()
-    })
-
-    new_user["_id"] = str(new_user["_id"])
-    return {
-        "success": True,
-        "message": "User account created successfully.",
-        "data": UserResponse(**new_user),
-        "meta": {},
-        "errors": []
-    }
-
-@router.put("/{user_id}", response_model=APIResponse[UserResponse])
-async def update_user(
-    user_id: str,
-    user_data: UserUpdate,
-    db: motor.motor_asyncio.AsyncIOMotorDatabase = Depends(get_db),
-    current_user: User = Depends(requires_permission("users:manage"))
-):
-    """Update profile parameters and security privileges of an active user."""
-    target_user = await db["users"].find_one({"_id": user_id})
-    if not target_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-
-    # Enforce organizational boundary
-    if str(target_user["tenant_id"]) != current_user.tenant_id:
-        role_doc = await db["roles"].find_one({"_id": current_user.role_id})
-        if not role_doc or role_doc.get("name") != "SuperAdmin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: tenant ID scope mismatch."
-            )
-
-    update_fields = {}
-    if user_data.email is not None:
-        email_lower = user_data.email.lower()
-        if email_lower != target_user["email"]:
-            dup = await db["users"].find_one({"email": email_lower})
-            if dup:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already exists"
-                )
-            update_fields["email"] = email_lower
-
-    if user_data.full_name is not None:
-        update_fields["full_name"] = user_data.full_name
-
-    if user_data.role_id is not None:
-        role_doc = await db["roles"].find_one({"_id": user_data.role_id})
-        if not role_doc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Role does not exist"
-            )
-        update_fields["role_id"] = user_data.role_id
-
-    if user_data.is_active is not None:
-        update_fields["is_active"] = user_data.is_active
-
-    if not update_fields:
-        target_user["_id"] = str(target_user["_id"])
-        return {
-            "success": True,
-            "message": "No modification parameters provided.",
-            "data": UserResponse(**target_user),
-            "meta": {},
-            "errors": []
-        }
-
-    result = await db["users"].find_one_and_update(
-        {"_id": user_id},
-        {"$set": update_fields},
-        return_document=True
+    return UserResponseSchema(
+        id=str(user.id),
+        userId=user.user_id,
+        organizationId=str(user.organization_id),
+        username=user.username,
+        email=user.email,
+        status=user.status,
+        accountType=user.account_type,
+        emailVerified=user.email_verified,
+        phoneVerified=user.phone_verified,
+        mfaEnabled=user.mfa_enabled,
+        profile=profile_schema,
+        roles=role_slugs,
+        academicAffiliation=affiliation,
+        createdAt=user.created_at,
+        updatedAt=user.updated_at,
+        lastLogin=user.last_login
     )
-    result["_id"] = str(result["_id"])
 
-    # Audit log
-    await db["audit_logs"].insert_one({
-        "_id": generate_prefixed_id("aud"),
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "user_email": current_user.email,
-        "action": "user_update",
-        "category": "audit",
-        "details": {"updated_user_id": user_id, "fields": list(update_fields.keys())},
-        "created_at": datetime.utcnow()
-    })
-
-    return {
-        "success": True,
-        "message": "User account updated successfully.",
-        "data": UserResponse(**result),
-        "meta": {},
-        "errors": []
-    }
-
-@router.delete("/{user_id}", response_model=APIResponse[None])
-async def delete_user(
-    user_id: str,
-    db: motor.motor_asyncio.AsyncIOMotorDatabase = Depends(get_db),
-    current_user: User = Depends(requires_permission("users:manage"))
+@router.post("", response_model=APIResponse[UserResponseSchema], status_code=status.HTTP_201_CREATED, summary="Create platform user")
+async def create_user(
+    payload: UserCreateSchema,
+    context: IdentityContext = Depends(get_current_identity),
+    user_service: UserService = Depends(get_user_service),
+    _: None = Depends(check_permission("users:manage"))
 ):
-    """Deactivate or remove user records from platform databases."""
-    target_user = await db["users"].find_one({"_id": user_id})
-    if not target_user:
+    # Pass dict representation to service for ingestion
+    user_dict = payload.model_dump()
+    user = await user_service.create_user(
+        org_id_str=str(context.organization.id),
+        data=user_dict,
+        current_user=context.user
+    )
+    res = await build_user_response(user)
+    return APIResponse(
+        success=True,
+        message="User created successfully.",
+        data=res
+    )
+
+@router.get("/search", response_model=APIResponse[List[UserResponseSchema]], summary="Search/filter users")
+async def search_users(
+    query: Optional[str] = Query(None, alias="query"),
+    status: Optional[str] = Query(None),
+    account_type: Optional[str] = Query(None, alias="accountType"),
+    role_id: Optional[str] = Query(None, alias="roleId"),
+    role_slug: Optional[str] = Query(None, alias="roleSlug"),
+    department_id: Optional[str] = Query(None, alias="departmentId"),
+    program_id: Optional[str] = Query(None, alias="programId"),
+    branch_id: Optional[str] = Query(None, alias="branchId"),
+    semester_id: Optional[str] = Query(None, alias="semesterId"),
+    section_id: Optional[str] = Query(None, alias="sectionId"),
+    batch: Optional[str] = Query(None),
+    sort_by: str = Query("createdAt", alias="sortBy"),
+    sort_order: str = Query("asc", alias="sortOrder"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    context: IdentityContext = Depends(get_current_identity),
+    search_service: UserSearchService = Depends(get_search_service),
+    _: None = Depends(check_permission("users:read"))
+):
+    filters = {
+        "status": status,
+        "accountType": account_type,
+        "roleId": role_id,
+        "roleSlug": role_slug,
+        "departmentId": department_id,
+        "programId": program_id,
+        "branchId": branch_id,
+        "semesterId": semester_id,
+        "sectionId": section_id,
+        "batch": batch
+    }
+    
+    users, total = await search_service.search_users(
+        org_id=context.organization.id,
+        query_str=query,
+        filters=filters,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        skip=skip,
+        limit=limit
+    )
+
+    data = [await build_user_response(u) for u in users]
+    return APIResponse(
+        success=True,
+        message="Users search completed.",
+        data=data,
+        meta={"total": total, "skip": skip, "limit": limit}
+    )
+
+@router.get("", response_model=APIResponse[List[UserResponseSchema]], summary="List organization users")
+async def list_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    sort_by: str = Query("createdAt", alias="sortBy"),
+    sort_order: str = Query("asc", alias="sortOrder"),
+    status: Optional[str] = Query(None),
+    account_type: Optional[str] = Query(None, alias="accountType"),
+    context: IdentityContext = Depends(get_current_identity),
+    user_service: UserService = Depends(get_user_service),
+    _: None = Depends(check_permission("users:read"))
+):
+    filters = {}
+    if status:
+        filters["status"] = status
+    if account_type:
+        filters["accountType"] = account_type
+
+    users = await user_service.user_repo.list(
+        org_id=context.organization.id,
+        skip=skip,
+        limit=limit,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        filters=filters
+    )
+    total = await user_service.user_repo.count(
+        org_id=context.organization.id,
+        filters=filters
+    )
+    
+    data = [await build_user_response(u) for u in users]
+    return APIResponse(
+        success=True,
+        message="Retrieve users completed.",
+        data=data,
+        meta={"total": total, "skip": skip, "limit": limit}
+    )
+
+
+
+@router.post("/bulk-import", response_model=APIResponse[BulkImportReport], summary="Bulk import users from CSV")
+async def bulk_import_users(
+    preview: bool = Query(False),
+    file: UploadFile = File(...),
+    context: IdentityContext = Depends(get_current_identity),
+    bulk_service: BulkImportService = Depends(get_bulk_service),
+    _: None = Depends(check_permission("users:manage"))
+):
+    contents = await file.read()
+    csv_str = contents.decode("utf-8")
+    report = await bulk_service.import_users_csv(
+        org_id_str=str(context.organization.id),
+        csv_content=csv_str,
+        preview=preview,
+        current_user=context.user
+    )
+    return APIResponse(
+        success=True,
+        message="Bulk CSV import execution complete." if not preview else "Bulk CSV import preview report generated.",
+        data=BulkImportReport(**report)
+    )
+
+@router.patch("/bulk-status", response_model=APIResponse[Dict[str, Any]], summary="Bulk update user status")
+async def bulk_update_status(
+    payload: BulkStatusUpdateSchema,
+    context: IdentityContext = Depends(get_current_identity),
+    user_service: UserService = Depends(get_user_service),
+    _: None = Depends(check_permission("users:manage"))
+):
+    result = await user_service.bulk_status_change(
+        org_id_str=str(context.organization.id),
+        user_ids=payload.user_ids,
+        status=payload.status,
+        current_user=context.user,
+        reason=payload.reason
+    )
+    return APIResponse(
+        success=True,
+        message="Bulk user status update executed.",
+        data=result
+    )
+
+@router.patch("/bulk-roles", response_model=APIResponse[Dict[str, Any]], summary="Bulk assign user roles")
+async def bulk_assign_roles(
+    payload: BulkRolesUpdateSchema,
+    context: IdentityContext = Depends(get_current_identity),
+    user_service: UserService = Depends(get_user_service),
+    _: None = Depends(check_permission("users:manage"))
+):
+    if payload.action not in ("add", "remove", "replace"):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=400,
+            detail="Invalid action parameter. Must be one of: add, remove, replace."
         )
 
-    if str(target_user["tenant_id"]) != current_user.tenant_id:
-        role_doc = await db["roles"].find_one({"_id": current_user.role_id})
-        if not role_doc or role_doc.get("name") != "SuperAdmin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: tenant ID scope mismatch."
-            )
+    result = await user_service.bulk_role_assignment(
+        org_id_str=str(context.organization.id),
+        user_ids=payload.user_ids,
+        role_ids=payload.role_ids,
+        action=payload.action,
+        current_user=context.user
+    )
+    return APIResponse(
+        success=True,
+        message="Bulk user roles mapping update executed.",
+        data=result
+    )
 
-    await db["users"].delete_one({"_id": user_id})
+# =====================================================================
+# DYNAMIC USER PATH ENDPOINTS (must be at the bottom to prevent conflicts)
+# =====================================================================
 
-    # Audit log
-    await db["audit_logs"].insert_one({
-        "_id": generate_prefixed_id("aud"),
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "user_email": current_user.email,
-        "action": "user_delete",
-        "category": "audit",
-        "details": {"deleted_user_id": user_id, "email": target_user["email"]},
-        "created_at": datetime.utcnow()
-    })
-    
-    return {
-        "success": True,
-        "message": "User account deleted successfully.",
-        "data": None,
-        "meta": {},
-        "errors": []
-    }
+@router.get("/{userId}", response_model=APIResponse[UserResponseSchema], summary="Get user details")
+async def get_user(
+    userId: str,
+    context: IdentityContext = Depends(get_current_identity),
+    user_service: UserService = Depends(get_user_service),
+    _: None = Depends(check_permission("users:read"))
+):
+    user = await user_service.get_user_details(str(context.organization.id), userId)
+    res = await build_user_response(user)
+    return APIResponse(
+        success=True,
+        message="User details resolved.",
+        data=res
+    )
+
+@router.patch("/{userId}", response_model=APIResponse[UserResponseSchema], summary="Update user account")
+async def update_user(
+    userId: str,
+    payload: UserUpdateSchema,
+    context: IdentityContext = Depends(get_current_identity),
+    user_service: UserService = Depends(get_user_service),
+    _: None = Depends(check_permission("users:manage"))
+):
+    update_dict = payload.model_dump(exclude_unset=True)
+    user = await user_service.update_user(
+        org_id_str=str(context.organization.id),
+        user_id_str=userId,
+        update_data=update_dict,
+        current_user=context.user
+    )
+    res = await build_user_response(user)
+    return APIResponse(
+        success=True,
+        message="User updated successfully.",
+        data=res
+    )
+
+@router.delete("/{userId}", response_model=APIResponse[None], summary="Soft delete user account")
+async def delete_user(
+    userId: str,
+    context: IdentityContext = Depends(get_current_identity),
+    user_service: UserService = Depends(get_user_service),
+    _: None = Depends(check_permission("users:manage"))
+):
+    await user_service.soft_delete_user(
+        org_id_str=str(context.organization.id),
+        user_id_str=userId,
+        current_user=context.user
+    )
+    return APIResponse(
+        success=True,
+        message="User logical deactivation completed successfully.",
+        data=None
+    )

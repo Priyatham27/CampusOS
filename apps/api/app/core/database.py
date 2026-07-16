@@ -50,6 +50,12 @@ class InMemoryCache:
     def delete(self, key: str):
         self._store.pop(key, None)
 
+    def flushdb(self):
+        self._store.clear()
+
+    def flushall(self):
+        self._store.clear()
+
     def ping(self):
         return True
 
@@ -63,5 +69,10 @@ def get_db() -> motor.motor_asyncio.AsyncIOMotorDatabase:
 
 def get_redis():
     if db_manager.redis_client is None:
-        db_manager.connect()
+        try:
+            db_manager.connect()
+        except Exception:
+            pass
+    if db_manager.redis_client is None:
+        db_manager.redis_client = InMemoryCache()
     return db_manager.redis_client

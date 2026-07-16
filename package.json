@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "apps/web"
+    "frontend"
   ],
   "scripts": {
-    "web:dev": "npm run dev --workspace=apps/web",
-    "web:build": "npm run build --workspace=apps/web",
-    "web:start": "npm run start --workspace=apps/web",
-    "api:dev": "python -m uvicorn apps.api.app.main:app --reload --port 8000"
+    "web:dev": "npm run dev --workspace=frontend",
+    "web:build": "npm run build --workspace=frontend",
+    "web:start": "npm run start --workspace=frontend",
+    "api:dev": "python -m uvicorn backend.app.main:app --reload --port 8000"
   }
 }

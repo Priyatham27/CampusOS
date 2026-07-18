@@ -19,6 +19,7 @@ from app.models.org_engine import ORG_ENGINE_MODELS
 from app.models.identity import IDENTITY_MODELS
 from app.models.catalog import CATALOG_MODELS
 from app.models.calendar import CALENDAR_MODELS
+from app.student.models import STUDENT_MODELS
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,7 +31,7 @@ async def lifespan(app: FastAPI):
             logger.info("Initializing Beanie ODM with document models...")
             await init_beanie(
                 database=db_manager.db,
-                document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS + CATALOG_MODELS + CALENDAR_MODELS
+                document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS + CATALOG_MODELS + CALENDAR_MODELS + STUDENT_MODELS
             )
             logger.info("Beanie ODM initialization completed successfully.")
             # Run startup bootstrapping for identity components
@@ -97,6 +98,20 @@ from app.core.authorization_exceptions import AuthorizationException
 from app.core.user_exceptions import UserException
 from app.academic.exceptions import AcademicException
 from app.catalog.exceptions import CatalogException
+from app.student.exceptions import StudentException
+
+@app.exception_handler(StudentException)
+async def student_exception_handler(request: Request, exc: StudentException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "message": exc.detail,
+            "data": None,
+            "meta": {},
+            "errors": [exc.__class__.__name__]
+        }
+    )
 
 @app.exception_handler(UserException)
 async def user_exception_handler(request: Request, exc: UserException):

@@ -19,6 +19,7 @@ from app.api.v1.config import router as config_router
 from app.api.v1.credentials import router as credentials_router
 from app.api.v1.identity_health import router as identity_health_router
 from app.academic.readiness_router import router as academic_readiness_router
+from app.student.router import router as student_router
 
 api_router = APIRouter()
 
@@ -30,6 +31,7 @@ api_router.include_router(organizations_router, prefix="/organizations", tags=["
 api_router.include_router(branding_router)
 api_router.include_router(academic_router, tags=["Academic Platform"])
 api_router.include_router(academic_readiness_router, tags=["Academic Platform Diagnostics"])
+api_router.include_router(student_router, tags=["Student Platform"])
 api_router.include_router(catalog_router, tags=["Catalog Engine"])
 api_router.include_router(calendar_router, tags=["Academic Calendar"])
 api_router.include_router(capability_router, prefix="/capabilities", tags=["Capabilities Engine"])

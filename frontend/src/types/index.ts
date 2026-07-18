@@ -67,3 +67,4 @@ export interface AuthToken {
 
 export * from "./academic";
 export * from "./calendar";
+export * from "./student";

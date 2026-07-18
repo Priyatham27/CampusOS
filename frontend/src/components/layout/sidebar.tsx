@@ -20,6 +20,7 @@ import {
   ChevronRight,
   GraduationCap,
   Library,
+  Contact
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
 
   const coreNav = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { name: "Students", href: "/dashboard/students", icon: Contact, perm: "student:read" },
     { name: "Academic", href: "/dashboard/academic", icon: GraduationCap, perm: "academic:read" },
     { name: "Catalog", href: "/dashboard/catalog", icon: Library, perm: "academic:read" },
     { name: "Users", href: "/dashboard/users", icon: Users, perm: "users:read" },

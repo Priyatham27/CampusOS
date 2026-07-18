@@ -64,3 +64,6 @@ export interface AuthToken {
   expires_in: number;
   token_type: string;
 }
+
+export * from "./academic";
+export * from "./calendar";

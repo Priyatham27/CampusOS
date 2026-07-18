@@ -15,6 +15,7 @@ import {
   Bookmark,
   Search,
   Settings,
+  CalendarRange,
 } from "lucide-react";
 
 interface TabItem {
@@ -33,6 +34,7 @@ export default function AcademicLayout({ children }: { children: React.ReactNode
     { name: "Programs", href: "/dashboard/academic/programs", icon: BookOpen },
     { name: "Branches", href: "/dashboard/academic/branches", icon: GitBranch },
     { name: "Semesters", href: "/dashboard/academic/semesters", icon: Layers },
+    { name: "Calendar & Windows", href: "/dashboard/academic/calendar", icon: CalendarRange },
     { name: "Sections", href: "/dashboard/academic/sections", icon: Grid },
     { name: "Courses", href: "/dashboard/academic/courses", icon: Bookmark },
     { name: "Cross Search", href: "/dashboard/academic/search", icon: Search },

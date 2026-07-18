@@ -15,6 +15,8 @@ from app.main import app
 from app.core.database import db_manager
 from app.models.org_engine import ORG_ENGINE_MODELS
 from app.models.identity import IDENTITY_MODELS
+from app.models.catalog import CATALOG_MODELS
+from app.models.calendar import CALENDAR_MODELS
 from app.repositories.organization import OrganizationRepository
 from app.services.organization import OrganizationService
 
@@ -25,7 +27,10 @@ async def test_db_client():
     db = client.get_database("campusos_test_db")
     
     # Initialize Beanie Document Models for both modules
-    await init_beanie(database=db, document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS)
+    await init_beanie(
+        database=db,
+        document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS + CATALOG_MODELS + CALENDAR_MODELS
+    )
     
     # Patch the global db_manager to use this test connection and disable standard connect calls
     db_manager.client = client

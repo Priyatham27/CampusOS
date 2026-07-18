@@ -37,6 +37,7 @@ export function useAuth() {
     },
     enabled: loggedInFlag,
     staleTime: 1000 * 60 * 5, // 5 minutes cache
+    retry: false, // Do not retry auth endpoint failures
   });
 
   // Dynamically inject custom HSL themes when tenant configurations load

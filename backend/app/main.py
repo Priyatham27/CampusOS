@@ -11,12 +11,14 @@ from app.core.database import db_manager
 from app.core.logger import logger
 from app.middleware.tenant_middleware import TenantMiddleware
 from app.middleware.identity_middleware import IdentityMiddleware
+from app.academic.middleware import AcademicMiddleware
 from app.middleware.request_context_middleware import RequestContextMiddleware
 from app.middleware.request_logging_middleware import RequestLoggingMiddleware
 from app.api.v1.router import api_router
 from app.models.org_engine import ORG_ENGINE_MODELS
 from app.models.identity import IDENTITY_MODELS
 from app.models.catalog import CATALOG_MODELS
+from app.models.calendar import CALENDAR_MODELS
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,13 +30,18 @@ async def lifespan(app: FastAPI):
             logger.info("Initializing Beanie ODM with document models...")
             await init_beanie(
                 database=db_manager.db,
-                document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS + CATALOG_MODELS
+                document_models=ORG_ENGINE_MODELS + IDENTITY_MODELS + CATALOG_MODELS + CALENDAR_MODELS
             )
             logger.info("Beanie ODM initialization completed successfully.")
             # Run startup bootstrapping for identity components
             from app.services.identity_bootstrap import IdentityBootstrapService
             bootstrap_svc = IdentityBootstrapService()
             await bootstrap_svc.bootstrap()
+            
+            # Run startup bootstrapping for academic components
+            from app.academic.bootstrap import AcademicBootstrapService
+            await AcademicBootstrapService.bootstrap()
+            
             logger.info("Lifespan startup sequence completed successfully.")
     except Exception as e:
         logger.error(f"Database setup error during startup lifecycle: {e}")
@@ -61,6 +68,7 @@ app.add_middleware(
 
 # Register Tenant and Identity Middleware pipeline
 app.add_middleware(TenantMiddleware)
+app.add_middleware(AcademicMiddleware)
 app.add_middleware(IdentityMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestContextMiddleware)
